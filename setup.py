@@ -44,7 +44,7 @@ setup(
     long_description=readme + '\n\n' + history,
     include_package_data=True,
     keywords='scopes',
-    name='scopes',
+    name='scopes-py',
     packages=find_packages(include=['scopes']),
     setup_requires=setup_requirements,
     test_suite='tests',
