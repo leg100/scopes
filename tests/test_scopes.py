@@ -11,7 +11,8 @@ import pytest
 
 from click.testing import CliRunner
 
-from scopes import scopes
+from scopes.tasks import tasks, bolt, spout, builder
+from scopes.graph import G, build, topological_sort, traverse
 from scopes import cli
 
 
@@ -42,84 +43,72 @@ def test_command_line_interface():
     assert '--help  Show this message and exit.' in help_result.output
 
 
-# t1------
-# |   |  |
-# v   v  |
-# t2  t3 |
-# \  /  /  t6
-#  v   |   |
-#  t4<----/
-#
-#  t5 (skipped)
+# t1---
+# |   |
+# v   v
+# t2  t3
+# \  /     t4
+#  v       |
+#  t5<----/
 
 
 @pytest.fixture
-def tasks():
-    scopes.tasks = []
+def example():
+    tasks.clear()
+    G.clear()
 
-    @scopes.task({'x': None})
+    @spout({'x': None})
     def t1():
-        return {'x': True}
+        yield {'x': 'east'}
+        yield {'x': 'west'}
 
 
-    @scopes.task({'y': None}, lambda d: 'x' in d)
+    @bolt({'y': None}, lambda d: 'x' in d)
     def t2(dep):
         return {'y': 1, **dep}
 
 
-    @scopes.task({'z': None}, lambda d: d == {'x': None})
+    @bolt({'z': None}, lambda d: d == {'x': None})
     def t3(dep):
         return {'z': 1, **dep}
 
 
-    @scopes.task({'a': None}, lambda _: True)
-    def t4(dep):
-        return {'a': 2, **dep}
+    @spout({'c': None})
+    def t4():
+        yield {'c': 4, 'x': 'east'}
+        yield {'c': 5, 'x': 'west'}
 
 
-    # shouldn't resolve any dependencies
-    @scopes.task({'b': None}, lambda _: False)
-    def t5(dep):
-        return {'b': 3, **dep}
+    @builder({'a': 2}, lambda _: True, 'x')
+    def t5(obj, dep):
+        obj.update(dep)
 
 
-    @scopes.task({'c': None})
-    def t6():
-        yield {'c': 4}
-        yield {'c': 5}
+def test_task_decorator(example):
+    assert len(tasks) == 5
+    assert callable(tasks[0].func)
+    assert tasks[0].obj == {'x': None}
 
 
-@pytest.fixture
-def G():
-    return scopes.init()
+def test_task_dag(example):
+    build(tasks)
 
-
-def test_task_decorator(tasks):
-    assert len(scopes.tasks) == 6
-    assert callable(scopes.tasks[0][0])
-    assert scopes.tasks[0][1] == {'x': None}
-
-
-def test_task_dag(G, tasks):
-    scopes.build_graph(G)
-
-    assert len(G.nodes) == 5
+    assert len(G) == 5
     assert len(G.edges) == 6
 
 
-def test_task_traversal(G, tasks):
-    scopes.build_graph(G)
-    results = scopes.traverse_graph(G)
+def test_task_traversal(example):
+    build(tasks)
+    nodes = topological_sort()
+    results = traverse(nodes)
 
-    assert results == [
-            {'x': True},
-            {'c': 4},
-            {'c': 5},
-            {'x': True, 'y': 1},
-            {'x': True, 'z': 1},
-            {'x': True, 'a': 2},
-            {'x': True, 'y': 1, 'a': 2},
-            {'x': True, 'z': 1, 'a': 2},
-            {'a': 2, 'c': 4},
-            {'a': 2, 'c': 5}
-            ]
+    assert results == {
+            't1': [{'x': 'east'}, {'x': 'west'}],
+            't2': [{'x': 'east', 'y': 1}, {'x': 'west', 'y': 1}],
+            't3': [{'x': 'east', 'z': 1}, {'x': 'west', 'z': 1}],
+            't4': [{'x': 'east', 'c': 4}, {'x': 'west', 'c': 5}],
+            't5': [
+                {'a': 2, 'x': 'east', 'y': 1, 'z': 1, 'c': 4},
+                {'a': 2, 'x': 'west', 'y': 1, 'z': 1, 'c': 5}
+                ]
+            }
