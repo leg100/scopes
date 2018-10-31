@@ -23,6 +23,16 @@ Build configs progressively with code
 * Documentation: https://scopes.readthedocs.io.
 
 
+Tasks
+-----
+
+* Spout
+* Builder
+* Bolt
+* Serializer
+* Writer
+* [Sink](https://en.wikipedia.org/wiki/Vertex_(graph_theory)
+
 Features
 --------
 
